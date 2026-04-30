@@ -46,14 +46,18 @@ public class NativeImageExecutor {
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 listener.onProcessFailed(e);
-            } catch (Exception e) {
+            } catch (IOException e) {
                 listener.onProcessFailed(e);
             }
         }, "NativeImage-Execution-Thread").start();
     }
 
     private int runProcess(String command, File workingDir, LogListener listener) throws IOException, InterruptedException {
-        ProcessBuilder pb = new ProcessBuilder("cmd.exe", "/c", command);
+        String cmdPath = System.getenv("ComSpec");
+        if (cmdPath == null) {
+            cmdPath = "cmd.exe";
+        }
+        ProcessBuilder pb = new ProcessBuilder(cmdPath, "/c", command);
         if (workingDir != null) {
             pb.directory(workingDir);
         }
