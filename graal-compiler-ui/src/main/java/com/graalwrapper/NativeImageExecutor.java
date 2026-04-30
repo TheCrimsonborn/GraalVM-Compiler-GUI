@@ -4,6 +4,7 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.IOException;
 
 public class NativeImageExecutor {
 
@@ -39,31 +40,7 @@ public class NativeImageExecutor {
                 listener.onLogMessage("Starting build process...");
                 listener.onLogMessage("Command: cmd.exe /c " + command);
 
-                ProcessBuilder pb = new ProcessBuilder("cmd.exe", "/c", command);
-                if (workingDir != null) {
-                    pb.directory(workingDir);
-                }
-
-                // Start the process
-                Process process = pb.start();
-
-                // Thread for reading Standard Output
-                Thread stdoutThread = new Thread(() -> readStream(process.getInputStream(), listener));
-                stdoutThread.setName("NativeImage-Stdout-Thread");
-                
-                // Thread for reading Standard Error
-                Thread stderrThread = new Thread(() -> readStream(process.getErrorStream(), listener));
-                stderrThread.setName("NativeImage-Stderr-Thread");
-
-                stdoutThread.start();
-                stderrThread.start();
-
-                // Wait for streams to finish reading
-                stdoutThread.join();
-                stderrThread.join();
-
-                // Wait for the process to exit
-                int exitCode = process.waitFor();
+                int exitCode = runProcess(command, workingDir, listener);
                 listener.onProcessComplete(exitCode);
 
             } catch (InterruptedException e) {
@@ -73,6 +50,34 @@ public class NativeImageExecutor {
                 listener.onProcessFailed(e);
             }
         }, "NativeImage-Execution-Thread").start();
+    }
+
+    private int runProcess(String command, File workingDir, LogListener listener) throws IOException, InterruptedException {
+        ProcessBuilder pb = new ProcessBuilder("cmd.exe", "/c", command);
+        if (workingDir != null) {
+            pb.directory(workingDir);
+        }
+
+        // Start the process
+        Process process = pb.start();
+
+        // Thread for reading Standard Output
+        Thread stdoutThread = new Thread(() -> readStream(process.getInputStream(), listener));
+        stdoutThread.setName("NativeImage-Stdout-Thread");
+        
+        // Thread for reading Standard Error
+        Thread stderrThread = new Thread(() -> readStream(process.getErrorStream(), listener));
+        stderrThread.setName("NativeImage-Stderr-Thread");
+
+        stdoutThread.start();
+        stderrThread.start();
+
+        // Wait for streams to finish reading
+        stdoutThread.join();
+        stderrThread.join();
+
+        // Wait for the process to exit
+        return process.waitFor();
     }
 
     /**
