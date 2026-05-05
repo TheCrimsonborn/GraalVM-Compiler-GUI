@@ -34,6 +34,7 @@ buildNumber.properties
 .mvn/timing.properties
 # https://github.com/takari/maven-wrapper#usage-without-binary-jar
 .mvn/wrapper/maven-wrapper.jar
+ScratchTest$1.class
 
 # IDEs
 .idea/
@@ -46,3 +47,7 @@ buildNumber.properties
 
 # GraalVM Installation
 graalvm-ce-java11-*/
+
+# Test App
+test_app/
+reports/
