@@ -26,6 +26,8 @@ public class GraalCompilerDashboard extends JFrame {
     private JTextField agentArgsField;
     private JTextField externalResourcesField;
     private JTextField includeResourcesField;
+    private JTextField buildTimeInitField;
+    private JTextField runTimeInitField;
     private JComboBox<String> targetOsComboBox;
     private JComboBox<String> ramComboBox;
     private JCheckBox standalonePackagerCb;
@@ -126,6 +128,8 @@ public class GraalCompilerDashboard extends JFrame {
         props.setProperty("agentArgs", agentArgsField.getText());
         props.setProperty("externalResources", externalResourcesField.getText());
         props.setProperty("includeResources", includeResourcesField.getText());
+        props.setProperty("buildTimeInit", buildTimeInitField.getText());
+        props.setProperty("runTimeInit", runTimeInitField.getText());
         props.setProperty("ramOption", (String) ramComboBox.getSelectedItem());
         props.setProperty("standalone", String.valueOf(standalonePackagerCb.isSelected()));
         props.setProperty("enableHttps", String.valueOf(enableHttpsCb.isSelected()));
@@ -181,6 +185,8 @@ public class GraalCompilerDashboard extends JFrame {
             agentArgsField.setText(props.getProperty("agentArgs", ""));
             externalResourcesField.setText(props.getProperty("externalResources", ""));
             includeResourcesField.setText(props.getProperty("includeResources", ""));
+            buildTimeInitField.setText(props.getProperty("buildTimeInit", ""));
+            runTimeInitField.setText(props.getProperty("runTimeInit", ""));
             ramComboBox.setSelectedItem(props.getProperty("ramOption", "-J-Xmx8G"));
             
             standalonePackagerCb.setSelected(Boolean.parseBoolean(props.getProperty("standalone", "true")));
@@ -308,6 +314,28 @@ public class GraalCompilerDashboard extends JFrame {
         includeResourcesField = new JTextField();
         includeResourcesField.setToolTipText("e.g. .* (Leave empty to include all selected folders)");
         panel.add(includeResourcesField, gbc);
+        gbc.gridwidth = 1;
+
+        row++;
+
+        // Build-Time Init
+        gbc.gridx = 0; gbc.gridy = row; gbc.weightx = 0.0;
+        panel.add(new JLabel("Build-Time Init Packages:"), gbc);
+        gbc.gridx = 1; gbc.gridwidth = 2; gbc.weightx = 1.0;
+        buildTimeInitField = new JTextField();
+        buildTimeInitField.setToolTipText("Comma-separated list of packages/classes (e.g. com.example, org.jogl)");
+        panel.add(buildTimeInitField, gbc);
+        gbc.gridwidth = 1;
+
+        row++;
+
+        // Run-Time Init
+        gbc.gridx = 0; gbc.gridy = row; gbc.weightx = 0.0;
+        panel.add(new JLabel("Run-Time Init Packages:"), gbc);
+        gbc.gridx = 1; gbc.gridwidth = 2; gbc.weightx = 1.0;
+        runTimeInitField = new JTextField();
+        runTimeInitField.setToolTipText("Comma-separated list of packages/classes (e.g. com.example.runtime)");
+        panel.add(runTimeInitField, gbc);
         gbc.gridwidth = 1;
 
         row++;
@@ -490,7 +518,6 @@ public class GraalCompilerDashboard extends JFrame {
         // Combine options
         String ramOption = (String) ramComboBox.getSelectedItem();
         String extraArgs = additionalArgsField.getText().trim();
-        String includeRes = includeResourcesField.getText().trim();
         
         StringBuilder optionsBuilder = new StringBuilder();
         optionsBuilder.append(ramOption).append(" ").append(extraArgs);
@@ -507,11 +534,25 @@ public class GraalCompilerDashboard extends JFrame {
         }
         String classPath = classPathBuilder.toString();
         
+        String includeRes = includeResourcesField.getText().trim();
         if (!includeRes.isEmpty()) {
             optionsBuilder.append(" -H:IncludeResources=\"").append(includeRes).append("\"");
         } else if (!externalRes.isEmpty()) {
             // If external resources selected but regex is empty, default to embed all
             optionsBuilder.append(" -H:IncludeResources=\".*\"");
+        }
+
+        // Init Packages Parse
+        String buildTimeStr = buildTimeInitField.getText().trim();
+        if (!buildTimeStr.isEmpty()) {
+            buildTimeStr = buildTimeStr.replaceAll("\\s+", "");
+            optionsBuilder.append(" --initialize-at-build-time=").append(buildTimeStr);
+        }
+
+        String runTimeStr = runTimeInitField.getText().trim();
+        if (!runTimeStr.isEmpty()) {
+            runTimeStr = runTimeStr.replaceAll("\\s+", "");
+            optionsBuilder.append(" --initialize-at-run-time=").append(runTimeStr);
         }
 
         if (enableHttpsCb.isSelected()) optionsBuilder.append(" --enable-https --enable-http");
