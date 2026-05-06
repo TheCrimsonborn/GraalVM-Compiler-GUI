@@ -1,17 +1,54 @@
 package com.graalwrapper;
 
-import com.formdev.flatlaf.FlatDarkLaf;
-
-import javax.swing.*;
-import javax.swing.text.DefaultCaret;
-import javax.swing.filechooser.FileNameExtensionFilter;
-import java.awt.*;
+import java.awt.BorderLayout;
+import java.awt.CardLayout;
+import java.awt.Color;
+import java.awt.Component;
+import java.awt.Dimension;
+import java.awt.FlowLayout;
+import java.awt.Font;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
+import java.awt.GridLayout;
+import java.awt.Insets;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.util.Properties;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+
+import javax.swing.BorderFactory;
+import javax.swing.Box;
+import javax.swing.BoxLayout;
+import javax.swing.JButton;
+import javax.swing.JCheckBox;
+import javax.swing.JComboBox;
+import javax.swing.JFileChooser;
+import javax.swing.JFrame;
+import javax.swing.JLabel;
+import javax.swing.JMenu;
+import javax.swing.JMenuBar;
+import javax.swing.JMenuItem;
+import javax.swing.JOptionPane;
+import javax.swing.JPanel;
+import javax.swing.JProgressBar;
+import javax.swing.JScrollPane;
+import javax.swing.JSeparator;
+import javax.swing.JSplitPane;
+import javax.swing.JTextField;
+import javax.swing.JTextPane;
+import javax.swing.SwingUtilities;
+import javax.swing.UIManager;
+import javax.swing.UnsupportedLookAndFeelException;
+import javax.swing.WindowConstants;
+import javax.swing.border.EmptyBorder;
+import javax.swing.filechooser.FileNameExtensionFilter;
+import javax.swing.text.SimpleAttributeSet;
+import javax.swing.text.StyleConstants;
+import javax.swing.text.StyledDocument;
+
+import com.formdev.flatlaf.FlatDarkLaf;
 
 public class GraalCompilerDashboard extends JFrame {
 
@@ -37,16 +74,20 @@ public class GraalCompilerDashboard extends JFrame {
     private JCheckBox exitHandlersCb;
     private JCheckBox diagnosticsCb;
     private JCheckBox mergeAgentConfigsCb;
-    private JTextArea consoleArea;
-    private final JButton buildButton;
-    private final JButton runAgentButton;
     
+    private JTextPane consoleArea;
+    private JProgressBar buildProgressBar;
+    private JButton buildButton;
+    private JButton runAgentButton;
+    
+    private CardLayout cardLayout;
+    private JPanel mainCardPanel;
+
     private File currentProjectFile = new File("last-build.graalproj");
 
     public GraalCompilerDashboard() {
         super("GraalVM Native Image Compiler Dashboard");
         
-        // Setup FlatLaf Dark Theme
         try {
             UIManager.setLookAndFeel(new FlatDarkLaf());
         } catch (UnsupportedLookAndFeelException ex) {
@@ -54,39 +95,344 @@ public class GraalCompilerDashboard extends JFrame {
         }
 
         setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
-        setSize(900, 700);
+        setSize(1100, 800);
         setLocationRelativeTo(null);
-        setLayout(new BorderLayout(10, 10));
+        setLayout(new BorderLayout());
 
         setupMenuBar();
 
-        // Create main container with padding
-        JPanel mainPanel = new JPanel(new BorderLayout(10, 10));
-        mainPanel.setBorder(BorderFactory.createEmptyBorder(15, 15, 15, 15));
+        // --- Sidebar (Navigation) ---
+        JPanel sidebar = new JPanel();
+        sidebar.setLayout(new BoxLayout(sidebar, BoxLayout.Y_AXIS));
+        sidebar.setBackground(new Color(43, 45, 48));
+        sidebar.setPreferredSize(new Dimension(200, getHeight()));
+        sidebar.setBorder(new EmptyBorder(20, 10, 20, 10));
 
-        // Top section: Inputs
-        mainPanel.add(createInputPanel(), BorderLayout.NORTH);
+        JLabel logoLabel = new JLabel("GraalVM Tools");
+        logoLabel.setFont(new Font("Segoe UI", Font.BOLD, 18));
+        logoLabel.setForeground(Color.WHITE);
+        logoLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        sidebar.add(logoLabel);
+        sidebar.add(Box.createRigidArea(new Dimension(0, 30)));
 
-        // Center section: Console output
-        mainPanel.add(createConsolePanel(), BorderLayout.CENTER);
+        cardLayout = new CardLayout();
+        mainCardPanel = new JPanel(cardLayout);
 
-        // Bottom section: Build button
-        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
+        sidebar.add(createNavButton("Compiler", "compilerCard"));
+        sidebar.add(Box.createRigidArea(new Dimension(0, 10)));
+        sidebar.add(createNavButton("Build History", "historyCard"));
+        sidebar.add(Box.createRigidArea(new Dimension(0, 10)));
+        sidebar.add(createNavButton("Settings", "settingsCard"));
+
+        add(sidebar, BorderLayout.WEST);
+
+        // --- Main Content Cards ---
+        mainCardPanel.add(createCompilerPanel(), "compilerCard");
+        mainCardPanel.add(createPlaceholderPanel("Build History - Work in Progress"), "historyCard");
+        mainCardPanel.add(createPlaceholderPanel("Settings - Work in Progress"), "settingsCard");
+
+        add(mainCardPanel, BorderLayout.CENTER);
+    }
+
+    private JButton createNavButton(String text, String cardName) {
+        JButton btn = new JButton(text);
+        btn.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        btn.setAlignmentX(Component.CENTER_ALIGNMENT);
+        btn.setMaximumSize(new Dimension(180, 40));
+        btn.setFocusPainted(false);
+        btn.addActionListener(e -> cardLayout.show(mainCardPanel, cardName));
+        return btn;
+    }
+
+    private JPanel createPlaceholderPanel(String title) {
+        JPanel p = new JPanel(new GridBagLayout());
+        JLabel l = new JLabel(title);
+        l.setFont(new Font("Segoe UI", Font.BOLD, 24));
+        l.setForeground(Color.GRAY);
+        p.add(l);
+        return p;
+    }
+
+    private JPanel createCompilerPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
         
+        JSplitPane splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT);
+        splitPane.setDividerLocation(400); // Top part gets 400px
+        splitPane.setResizeWeight(0.5);
+        splitPane.setBorder(null);
+
+        // Top: Configuration Panel
+        JPanel configPanel = new JPanel(new BorderLayout());
+        configPanel.setBorder(new EmptyBorder(10, 10, 10, 10));
+        
+        // Split Config into two sub-panels: File Pickers (North) and Arguments (Center)
+        JPanel pathsPanel = createPathsPanel();
+        JPanel argsPanel = createMultiColumnArgsPanel();
+        
+        configPanel.add(pathsPanel, BorderLayout.NORTH);
+        configPanel.add(argsPanel, BorderLayout.CENTER);
+        
+        JScrollPane configScroll = new JScrollPane(configPanel);
+        configScroll.setBorder(null);
+        splitPane.setTopComponent(configScroll);
+
+        // Bottom: Execution & Terminal
+        splitPane.setBottomComponent(createExecutionPanel());
+
+        panel.add(splitPane, BorderLayout.CENTER);
+        return panel;
+    }
+
+    private JPanel createPathsPanel() {
+        JPanel panel = new JPanel(new GridBagLayout());
+        panel.setBorder(BorderFactory.createTitledBorder("Environment Paths"));
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(5, 5, 5, 5);
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+
+        Font monoFont = new Font("Consolas", Font.PLAIN, 13);
+
+        int row = 0;
+        // Target JAR
+        gbc.gridx = 0; gbc.gridy = row; gbc.weightx = 0.0;
+        panel.add(new JLabel("Target JAR:"), gbc);
+        gbc.gridx = 1; gbc.weightx = 1.0;
+        targetJarField = new JTextField(); targetJarField.setFont(monoFont);
+        panel.add(targetJarField, gbc);
+        gbc.gridx = 2; gbc.weightx = 0.0;
+        JButton browseJarBtn = new JButton(BROWSE_LABEL);
+        browseJarBtn.addActionListener(e -> browseFile(targetJarField, false));
+        panel.add(browseJarBtn, gbc);
+        row++;
+
+        // GraalVM Home
+        gbc.gridx = 0; gbc.gridy = row; gbc.weightx = 0.0;
+        panel.add(new JLabel("GraalVM Home:"), gbc);
+        gbc.gridx = 1; gbc.weightx = 1.0;
+        graalHomeField = new JTextField(new File("graalvm-ce-java11-22.3.3").getAbsolutePath()); graalHomeField.setFont(monoFont);
+        panel.add(graalHomeField, gbc);
+        gbc.gridx = 2; gbc.weightx = 0.0;
+        JButton browseGraalBtn = new JButton(BROWSE_LABEL);
+        browseGraalBtn.addActionListener(e -> browseFile(graalHomeField, true));
+        panel.add(browseGraalBtn, gbc);
+        row++;
+
+        // Vcvars
+        gbc.gridx = 0; gbc.gridy = row; gbc.weightx = 0.0;
+        panel.add(new JLabel("vcvars64.bat:"), gbc);
+        gbc.gridx = 1; gbc.weightx = 1.0;
+        vcvarsField = new JTextField("C:\\Program Files\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Auxiliary\\Build\\vcvars64.bat"); vcvarsField.setFont(monoFont);
+        panel.add(vcvarsField, gbc);
+        gbc.gridx = 2; gbc.weightx = 0.0;
+        JButton browseVsBtn = new JButton(BROWSE_LABEL);
+        browseVsBtn.addActionListener(e -> browseFile(vcvarsField, false));
+        panel.add(browseVsBtn, gbc);
+        
+        return panel;
+    }
+
+    private JPanel createMultiColumnArgsPanel() {
+        JPanel outerPanel = new JPanel(new GridLayout(1, 2, 15, 0));
+        outerPanel.setBorder(new EmptyBorder(10, 0, 0, 0));
+
+        // LEFT COLUMN: Standard Arguments
+        JPanel leftPanel = new JPanel(new GridBagLayout());
+        leftPanel.setBorder(BorderFactory.createTitledBorder("Compiler Configuration"));
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(5, 5, 5, 5);
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.anchor = GridBagConstraints.WEST;
+
+        int row = 0;
+        gbc.gridx = 0; gbc.gridy = row; gbc.weightx = 0.0;
+        leftPanel.add(new JLabel("Main Class:"), gbc);
+        gbc.gridx = 1; gbc.weightx = 1.0;
+        mainClassField = new JTextField();
+        leftPanel.add(mainClassField, gbc);
+        row++;
+
+        gbc.gridx = 0; gbc.gridy = row; gbc.weightx = 0.0;
+        leftPanel.add(new JLabel("Additional Args:"), gbc);
+        gbc.gridx = 1; gbc.weightx = 1.0;
+        JPanel argsWrapper = new JPanel(new BorderLayout(5, 0));
+        additionalArgsField = new JTextField("--no-fallback");
+        argsWrapper.add(additionalArgsField, BorderLayout.CENTER);
+        JButton reachabilityBtn = new JButton("Reachability Metadata");
+        reachabilityBtn.addActionListener(e -> openReachabilityDialog());
+        argsWrapper.add(reachabilityBtn, BorderLayout.EAST);
+        leftPanel.add(argsWrapper, gbc);
+        row++;
+
+        gbc.gridx = 0; gbc.gridy = row; gbc.weightx = 0.0;
+        leftPanel.add(new JLabel("Ext Resources:"), gbc);
+        gbc.gridx = 1; gbc.weightx = 1.0;
+        JPanel extWrapper = new JPanel(new BorderLayout(5, 0));
+        externalResourcesField = new JTextField();
+        extWrapper.add(externalResourcesField, BorderLayout.CENTER);
+        JButton browseExtBtn = new JButton(BROWSE_LABEL);
+        browseExtBtn.addActionListener(e -> browseMultipleDirectories(externalResourcesField));
+        extWrapper.add(browseExtBtn, BorderLayout.EAST);
+        leftPanel.add(extWrapper, gbc);
+        row++;
+
+        gbc.gridx = 0; gbc.gridy = row; gbc.weightx = 0.0;
+        leftPanel.add(new JLabel("Include Res Regex:"), gbc);
+        gbc.gridx = 1; gbc.weightx = 1.0;
+        includeResourcesField = new JTextField();
+        leftPanel.add(includeResourcesField, gbc);
+        row++;
+
+        gbc.gridx = 0; gbc.gridy = row; gbc.weightx = 0.0;
+        leftPanel.add(new JLabel("Agent JVM Args:"), gbc);
+        gbc.gridx = 1; gbc.weightx = 1.0;
+        agentArgsField = new JTextField();
+        leftPanel.add(agentArgsField, gbc);
+        row++;
+
+        // Quick Flags
+        gbc.gridx = 0; gbc.gridy = row; gbc.gridwidth = 2;
+        JPanel flagsPanel = new JPanel(new GridLayout(4, 2, 5, 5));
+        standalonePackagerCb = new JCheckBox("Package as Standalone", true);
+        enableHttpsCb = new JCheckBox("Enable HTTPS");
+        staticBuildCb = new JCheckBox("Static Build");
+        verboseCb = new JCheckBox("Verbose");
+        exitHandlersCb = new JCheckBox("Exit Handlers");
+        diagnosticsCb = new JCheckBox("Diagnostics");
+        mergeAgentConfigsCb = new JCheckBox("Merge Agent Configs", true);
+        
+        flagsPanel.add(standalonePackagerCb);
+        flagsPanel.add(mergeAgentConfigsCb);
+        flagsPanel.add(enableHttpsCb);
+        flagsPanel.add(staticBuildCb);
+        flagsPanel.add(verboseCb);
+        flagsPanel.add(exitHandlersCb);
+        flagsPanel.add(diagnosticsCb);
+        leftPanel.add(flagsPanel, gbc);
+
+        // RIGHT COLUMN: Advanced / Class Init
+        JPanel rightPanel = new JPanel(new GridBagLayout());
+        rightPanel.setBorder(BorderFactory.createTitledBorder("Performance & Class Init"));
+        GridBagConstraints gbcR = new GridBagConstraints();
+        gbcR.insets = new Insets(5, 5, 5, 5);
+        gbcR.fill = GridBagConstraints.HORIZONTAL;
+        gbcR.anchor = GridBagConstraints.WEST;
+
+        int rowR = 0;
+        gbcR.gridx = 0; gbcR.gridy = rowR; gbcR.weightx = 0.0;
+        rightPanel.add(new JLabel("Target OS:"), gbcR);
+        gbcR.gridx = 1; gbcR.weightx = 1.0;
+        targetOsComboBox = new JComboBox<>(new String[]{"Windows (.exe)", "Linux (ELF via Docker)"});
+        rightPanel.add(targetOsComboBox, gbcR);
+        rowR++;
+
+        gbcR.gridx = 0; gbcR.gridy = rowR; gbcR.weightx = 0.0;
+        rightPanel.add(new JLabel("Max Build RAM:"), gbcR);
+        gbcR.gridx = 1; gbcR.weightx = 1.0;
+        ramComboBox = new JComboBox<>(new String[]{"-J-Xmx4G", "-J-Xmx6G", "-J-Xmx8G", "-J-Xmx12G", "-J-Xmx16G"});
+        ramComboBox.setSelectedIndex(2);
+        rightPanel.add(ramComboBox, gbcR);
+        rowR++;
+
+        gbcR.gridx = 0; gbcR.gridy = rowR; gbcR.gridwidth = 2;
+        rightPanel.add(new JSeparator(), gbcR);
+        rowR++;
+
+        gbcR.gridx = 0; gbcR.gridy = rowR; gbcR.gridwidth = 2;
+        rightPanel.add(new JLabel("Build-Time Init Packages:"), gbcR);
+        rowR++;
+        gbcR.gridx = 0; gbcR.gridy = rowR; gbcR.gridwidth = 2;
+        buildTimeInitField = new JTextField();
+        rightPanel.add(buildTimeInitField, gbcR);
+        rowR++;
+
+        gbcR.gridx = 0; gbcR.gridy = rowR; gbcR.gridwidth = 2;
+        rightPanel.add(new JLabel("Run-Time Init Packages:"), gbcR);
+        rowR++;
+        gbcR.gridx = 0; gbcR.gridy = rowR; gbcR.gridwidth = 2;
+        runTimeInitField = new JTextField();
+        rightPanel.add(runTimeInitField, gbcR);
+        rowR++;
+
+        gbcR.gridx = 0; gbcR.gridy = rowR; gbcR.gridwidth = 2; gbcR.fill = GridBagConstraints.NONE; gbcR.anchor = GridBagConstraints.EAST;
+        JButton selectFromJarBtn = new JButton("Select Packages from JAR...");
+        selectFromJarBtn.addActionListener(e -> openClassInitDialog());
+        rightPanel.add(selectFromJarBtn, gbcR);
+
+        // Fill remaining space
+        gbcR.gridy++; gbcR.weighty = 1.0;
+        rightPanel.add(new JLabel(""), gbcR);
+
+        outerPanel.add(leftPanel);
+        outerPanel.add(rightPanel);
+
+        return outerPanel;
+    }
+
+    private JPanel createExecutionPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBorder(BorderFactory.createTitledBorder("Execution & Terminal"));
+
+        // Controls Top
+        JPanel controlsPanel = new JPanel(new BorderLayout(15, 0));
+        controlsPanel.setBorder(new EmptyBorder(5, 5, 10, 5));
+
+        JPanel buttonsPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
         runAgentButton = new JButton("Run Tracing Agent");
         runAgentButton.setFont(new Font("Segoe UI", Font.BOLD, 14));
-        runAgentButton.setPreferredSize(new Dimension(200, 40));
         runAgentButton.addActionListener(e -> startTracingAgent());
-        buttonPanel.add(runAgentButton);
+        buttonsPanel.add(runAgentButton);
 
-        buildButton = new JButton("Build Native Image");
+        buildButton = new JButton("Build Native Executable");
         buildButton.setFont(new Font("Segoe UI", Font.BOLD, 14));
-        buildButton.setPreferredSize(new Dimension(200, 40));
+        buildButton.setBackground(new Color(62, 138, 204));
+        buildButton.setForeground(Color.WHITE);
         buildButton.addActionListener(e -> startBuildProcess());
-        buttonPanel.add(buildButton);
-        mainPanel.add(buttonPanel, BorderLayout.SOUTH);
+        buttonsPanel.add(buildButton);
 
-        add(mainPanel);
+        controlsPanel.add(buttonsPanel, BorderLayout.WEST);
+
+        buildProgressBar = new JProgressBar();
+        buildProgressBar.setStringPainted(true);
+        buildProgressBar.setString("Ready");
+        controlsPanel.add(buildProgressBar, BorderLayout.CENTER);
+
+        panel.add(controlsPanel, BorderLayout.NORTH);
+
+        // Terminal
+        consoleArea = new JTextPane();
+        consoleArea.setEditable(false);
+        consoleArea.setFont(new Font("Consolas", Font.PLAIN, 13));
+        consoleArea.setBackground(new Color(30, 30, 30));
+        consoleArea.setBorder(new EmptyBorder(5, 5, 5, 5));
+
+        JScrollPane scrollPane = new JScrollPane(consoleArea);
+        panel.add(scrollPane, BorderLayout.CENTER);
+
+        return panel;
+    }
+
+    private void appendColoredText(String message) {
+        if (consoleArea == null) return;
+        SwingUtilities.invokeLater(() -> {
+            StyledDocument doc = consoleArea.getStyledDocument();
+            SimpleAttributeSet style = new SimpleAttributeSet();
+            
+            StyleConstants.setForeground(style, new Color(200, 200, 200)); // Default light gray
+            
+            String lowerMsg = message.toLowerCase();
+            if (lowerMsg.contains("error") || lowerMsg.contains("failed") || lowerMsg.contains("exception")) {
+                StyleConstants.setForeground(style, new Color(255, 85, 85)); // Red
+            } else if (lowerMsg.contains("warning")) {
+                StyleConstants.setForeground(style, new Color(255, 184, 108)); // Yellow
+            } else if (lowerMsg.contains("success") || lowerMsg.contains("complete") || lowerMsg.contains("finished")) {
+                StyleConstants.setForeground(style, new Color(80, 250, 123)); // Green
+            }
+            
+            try {
+                doc.insertString(doc.getLength(), message + "\n", style);
+                consoleArea.setCaretPosition(doc.getLength());
+            } catch (Exception e) {}
+        });
     }
 
     private void setupMenuBar() {
@@ -110,13 +456,14 @@ public class GraalCompilerDashboard extends JFrame {
         menuBar.add(fileMenu);
         setJMenuBar(menuBar);
         
-        // Auto-load last build if exists
         SwingUtilities.invokeLater(() -> {
             if (currentProjectFile.exists()) {
                 loadProject(currentProjectFile);
             }
         });
     }
+
+    // --- Core Logic Methods (Save/Load/Execute) ---
 
     private void saveProject(File file) {
         Properties props = new Properties();
@@ -142,9 +489,7 @@ public class GraalCompilerDashboard extends JFrame {
 
         try (FileOutputStream out = new FileOutputStream(file)) {
             props.store(out, "GraalVM Native Image Compiler Project Settings");
-            if (consoleArea != null) {
-                consoleArea.append("Project saved to: " + file.getAbsolutePath() + "\n");
-            }
+            appendColoredText("Project saved to: " + file.getAbsolutePath());
         } catch (Exception ex) {
             JOptionPane.showMessageDialog(this, "Failed to save project: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
         }
@@ -198,227 +543,10 @@ public class GraalCompilerDashboard extends JFrame {
             mergeAgentConfigsCb.setSelected(Boolean.parseBoolean(props.getProperty("mergeConfigs", "true")));
             targetOsComboBox.setSelectedItem(props.getProperty("targetOs", "Windows (.exe)"));
             
-            if (consoleArea != null) {
-                consoleArea.append("Project loaded from: " + file.getAbsolutePath() + "\n");
-            }
+            appendColoredText("Project loaded from: " + file.getAbsolutePath());
         } catch (Exception ex) {
-            if (consoleArea != null) {
-                consoleArea.append("Failed to load project: " + ex.getMessage() + "\n");
-            }
+            appendColoredText("Failed to load project: " + ex.getMessage());
         }
-    }
-
-    private JPanel createInputPanel() {
-        JPanel panel = new JPanel(new GridBagLayout());
-        panel.setBorder(BorderFactory.createTitledBorder("Configuration"));
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(5, 5, 5, 5);
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.anchor = GridBagConstraints.WEST;
-
-        int row = 0;
-
-        // Target JAR
-        gbc.gridx = 0; gbc.gridy = row; gbc.weightx = 0.0;
-        panel.add(new JLabel("Target JAR File:"), gbc);
-        gbc.gridx = 1; gbc.weightx = 1.0;
-        targetJarField = new JTextField();
-        panel.add(targetJarField, gbc);
-        gbc.gridx = 2; gbc.weightx = 0.0;
-        JButton browseJarBtn = new JButton(BROWSE_LABEL);
-        browseJarBtn.addActionListener(e -> browseFile(targetJarField, false));
-        panel.add(browseJarBtn, gbc);
-
-        row++;
-
-        // Main Class
-        gbc.gridx = 0; gbc.gridy = row; gbc.weightx = 0.0;
-        panel.add(new JLabel("Main Class:"), gbc);
-        gbc.gridx = 1; gbc.gridwidth = 2; gbc.weightx = 1.0;
-        mainClassField = new JTextField();
-        mainClassField.setToolTipText("Auto-detected from JAR, or type manually (e.g. com.example.Main)");
-        panel.add(mainClassField, gbc);
-        gbc.gridwidth = 1;
-
-        row++;
-
-        // GraalVM Home
-        gbc.gridx = 0; gbc.gridy = row; gbc.weightx = 0.0;
-        panel.add(new JLabel("GraalVM Home:"), gbc);
-        gbc.gridx = 1; gbc.weightx = 1.0;
-        // Default to relative path
-        graalHomeField = new JTextField(new File("graalvm-ce-java11-22.3.3").getAbsolutePath());
-        panel.add(graalHomeField, gbc);
-        gbc.gridx = 2; gbc.weightx = 0.0;
-        JButton browseGraalBtn = new JButton(BROWSE_LABEL);
-        browseGraalBtn.addActionListener(e -> browseFile(graalHomeField, true));
-        panel.add(browseGraalBtn, gbc);
-
-        row++;
-
-        // vcvars64.bat Path
-        gbc.gridx = 0; gbc.gridy = row; gbc.weightx = 0.0;
-        panel.add(new JLabel("vcvars64.bat Path:"), gbc);
-        gbc.gridx = 1; gbc.weightx = 1.0;
-        vcvarsField = new JTextField("C:\\Program Files\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Auxiliary\\Build\\vcvars64.bat");
-        panel.add(vcvarsField, gbc);
-        gbc.gridx = 2; gbc.weightx = 0.0;
-        JButton browseVsBtn = new JButton(BROWSE_LABEL);
-        browseVsBtn.addActionListener(e -> browseFile(vcvarsField, false));
-        panel.add(browseVsBtn, gbc);
-
-        row++;
-
-        // Additional Arguments
-        gbc.gridx = 0; gbc.gridy = row; gbc.weightx = 0.0;
-        panel.add(new JLabel("Additional Arguments:"), gbc);
-        gbc.gridx = 1; gbc.weightx = 1.0;
-        additionalArgsField = new JTextField("--no-fallback");
-        panel.add(additionalArgsField, gbc);
-        gbc.gridx = 2; gbc.weightx = 0.0;
-        JButton reachabilityBtn = new JButton("Reachability Metadata");
-        reachabilityBtn.addActionListener(e -> openReachabilityDialog());
-        panel.add(reachabilityBtn, gbc);
-
-        row++;
-
-        // Agent JVM Args
-        gbc.gridx = 0; gbc.gridy = row; gbc.weightx = 0.0;
-        panel.add(new JLabel("Agent JVM Args:"), gbc);
-        gbc.gridx = 1; gbc.gridwidth = 2; gbc.weightx = 1.0;
-        agentArgsField = new JTextField("");
-        agentArgsField.setToolTipText("e.g. -Djava.library.path=natives");
-        panel.add(agentArgsField, gbc);
-        gbc.gridwidth = 1;
-
-        row++;
-
-        // External Resources (Folders)
-        gbc.gridx = 0; gbc.gridy = row; gbc.weightx = 0.0;
-        panel.add(new JLabel("External Resources (Folders):"), gbc);
-        gbc.gridx = 1; gbc.weightx = 1.0;
-        externalResourcesField = new JTextField();
-        externalResourcesField.setToolTipText("Select folders to embed into .exe (separated by ;)");
-        panel.add(externalResourcesField, gbc);
-        gbc.gridx = 2; gbc.weightx = 0.0;
-        JButton browseExtResBtn = new JButton(BROWSE_LABEL);
-        browseExtResBtn.addActionListener(e -> browseMultipleDirectories(externalResourcesField));
-        panel.add(browseExtResBtn, gbc);
-
-        row++;
-
-        // Include Resources
-        gbc.gridx = 0; gbc.gridy = row; gbc.weightx = 0.0;
-        panel.add(new JLabel("Include Resources (Regex):"), gbc);
-        gbc.gridx = 1; gbc.gridwidth = 2; gbc.weightx = 1.0;
-        includeResourcesField = new JTextField();
-        includeResourcesField.setToolTipText("e.g. .* (Leave empty to include all selected folders)");
-        panel.add(includeResourcesField, gbc);
-        gbc.gridwidth = 1;
-
-        row++;
-
-        // Build-Time Init
-        gbc.gridx = 0; gbc.gridy = row; gbc.weightx = 0.0;
-        panel.add(new JLabel("Build-Time Init Packages:"), gbc);
-        gbc.gridx = 1; gbc.gridwidth = 2; gbc.weightx = 1.0;
-        buildTimeInitField = new JTextField();
-        buildTimeInitField.setToolTipText("Comma-separated list of packages/classes (e.g. com.example, org.jogl)");
-        panel.add(buildTimeInitField, gbc);
-        gbc.gridwidth = 1;
-
-        row++;
-
-        // Run-Time Init
-        gbc.gridx = 0; gbc.gridy = row; gbc.weightx = 0.0;
-        panel.add(new JLabel("Run-Time Init Packages:"), gbc);
-        gbc.gridx = 1; gbc.gridwidth = 2; gbc.weightx = 1.0;
-        runTimeInitField = new JTextField();
-        runTimeInitField.setToolTipText("Comma-separated list of packages/classes (e.g. com.example.runtime)");
-        panel.add(runTimeInitField, gbc);
-        gbc.gridwidth = 1;
-
-        row++;
-
-        // Quick Flags
-        gbc.gridx = 0; gbc.gridy = row; gbc.weightx = 0.0;
-        panel.add(new JLabel("Quick Flags:"), gbc);
-        gbc.gridx = 1; gbc.gridwidth = 2; gbc.weightx = 1.0;
-        
-        JPanel flagsPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
-        standalonePackagerCb = new JCheckBox("Package as Standalone");
-        standalonePackagerCb.setToolTipText("Automatically creates a distribution folder with GraalVM DLLs and lib folder for AWT/Swing compatibility.");
-        standalonePackagerCb.setSelected(true); // Default to true since it's very helpful
-        enableHttpsCb = new JCheckBox("Enable HTTPS");
-        enableHttpsCb.setToolTipText("Adds --enable-https --enable-http");
-        staticBuildCb = new JCheckBox("Static Build");
-        staticBuildCb.setToolTipText("Adds --static");
-        verboseCb = new JCheckBox("Verbose");
-        verboseCb.setToolTipText("Adds --verbose");
-        exitHandlersCb = new JCheckBox("Exit Handlers");
-        exitHandlersCb.setToolTipText("Adds --install-exit-handlers");
-        diagnosticsCb = new JCheckBox("Diagnostics");
-        diagnosticsCb.setToolTipText("Adds --diagnostics-mode");
-        mergeAgentConfigsCb = new JCheckBox("Merge Agent Configs");
-        mergeAgentConfigsCb.setToolTipText("Merges new Tracing Agent configs into existing ones instead of overwriting.");
-        mergeAgentConfigsCb.setSelected(true);
-        
-        flagsPanel.add(standalonePackagerCb);
-        flagsPanel.add(enableHttpsCb);
-        flagsPanel.add(staticBuildCb);
-        flagsPanel.add(verboseCb);
-        flagsPanel.add(exitHandlersCb);
-        flagsPanel.add(diagnosticsCb);
-        flagsPanel.add(mergeAgentConfigsCb);
-        
-        panel.add(flagsPanel, gbc);
-        gbc.gridwidth = 1;
-
-        row++;
-
-        // RAM Allocation
-        gbc.gridx = 0; gbc.gridy = row; gbc.weightx = 0.0;
-        panel.add(new JLabel("Max Build RAM:"), gbc);
-        gbc.gridx = 1; gbc.gridwidth = 2; gbc.weightx = 1.0;
-        String[] ramOptions = {"-J-Xmx4G", "-J-Xmx6G", "-J-Xmx8G", "-J-Xmx12G", "-J-Xmx16G"};
-        ramComboBox = new JComboBox<>(ramOptions);
-        ramComboBox.setSelectedIndex(2); // Default to 8G
-        panel.add(ramComboBox, gbc);
-
-        row++;
-
-        // Target OS
-        gbc.gridx = 0; gbc.gridy = row; gbc.weightx = 0.0;
-        panel.add(new JLabel("Target OS:"), gbc);
-        gbc.gridx = 1; gbc.gridwidth = 2; gbc.weightx = 1.0;
-        String[] osOptions = {"Windows (.exe)", "Linux (ELF via Docker)"};
-        targetOsComboBox = new JComboBox<>(osOptions);
-        targetOsComboBox.setSelectedIndex(0);
-        targetOsComboBox.setToolTipText("Select the target operating system for the Native Image.");
-        panel.add(targetOsComboBox, gbc);
-        gbc.gridwidth = 1;
-
-        return panel;
-    }
-
-    private JPanel createConsolePanel() {
-        JPanel panel = new JPanel(new BorderLayout());
-        panel.setBorder(BorderFactory.createTitledBorder("Build Console"));
-
-        consoleArea = new JTextArea();
-        consoleArea.setEditable(false);
-        consoleArea.setFont(new Font("Consolas", Font.PLAIN, 13));
-        consoleArea.setBackground(new Color(30, 30, 30));
-        consoleArea.setForeground(new Color(200, 200, 200));
-
-        // Auto-scroll
-        DefaultCaret caret = (DefaultCaret) consoleArea.getCaret();
-        caret.setUpdatePolicy(DefaultCaret.ALWAYS_UPDATE);
-
-        JScrollPane scrollPane = new JScrollPane(consoleArea);
-        panel.add(scrollPane, BorderLayout.CENTER);
-
-        return panel;
     }
 
     private void browseFile(JTextField targetField, boolean directoriesOnly) {
@@ -432,12 +560,9 @@ public class GraalCompilerDashboard extends JFrame {
             chooser.setSelectedFile(currentFile);
         }
 
-        int result = chooser.showOpenDialog(this);
-        if (result == JFileChooser.APPROVE_OPTION) {
+        if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
             File selected = chooser.getSelectedFile();
             targetField.setText(selected.getAbsolutePath());
-            
-            // Auto-detect Main-Class if JAR is selected
             if (targetField == targetJarField && selected.getName().toLowerCase().endsWith(".jar")) {
                 autoDetectMainClass(selected);
             }
@@ -462,15 +587,11 @@ public class GraalCompilerDashboard extends JFrame {
         JFileChooser chooser = new JFileChooser();
         chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
         chooser.setMultiSelectionEnabled(true);
-        
-        int result = chooser.showOpenDialog(this);
-        if (result == JFileChooser.APPROVE_OPTION) {
+        if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
             File[] files = chooser.getSelectedFiles();
             StringBuilder sb = new StringBuilder(targetField.getText().trim());
             for (File f : files) {
-                if (sb.length() > 0 && !sb.toString().endsWith(";")) {
-                    sb.append(";");
-                }
+                if (sb.length() > 0 && !sb.toString().endsWith(";")) sb.append(";");
                 sb.append(f.getAbsolutePath());
             }
             targetField.setText(sb.toString());
@@ -479,8 +600,8 @@ public class GraalCompilerDashboard extends JFrame {
 
     private void openReachabilityDialog() {
         String targetJarPath = targetJarField.getText().trim();
-        File targetJar = null;
         File workingDir = new File(".");
+        File targetJar = null;
         if (!targetJarPath.isEmpty()) {
             targetJar = new File(targetJarPath);
             if (targetJar.exists() && targetJar.getParentFile() != null) {
@@ -500,8 +621,28 @@ public class GraalCompilerDashboard extends JFrame {
         }
     }
 
+    private void openClassInitDialog() {
+        String targetJarPath = targetJarField.getText().trim();
+        if (targetJarPath.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Please select a Target JAR File first.", "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        File targetJar = new File(targetJarPath);
+        if (!targetJar.exists()) {
+            JOptionPane.showMessageDialog(this, "Target JAR file does not exist.", "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        ClassInitDialog dialog = new ClassInitDialog(this, targetJar, buildTimeInitField.getText(), runTimeInitField.getText());
+        dialog.setVisible(true);
+
+        if (dialog.isApplied()) {
+            buildTimeInitField.setText(dialog.getResultBuildTime());
+            runTimeInitField.setText(dialog.getResultRunTime());
+        }
+    }
+
     private void startBuildProcess() {
-        // Validate inputs
         String targetJar = targetJarField.getText().trim();
         String mainClass = mainClassField.getText().trim();
         if (targetJar.isEmpty() || mainClass.isEmpty()) {
@@ -509,27 +650,19 @@ public class GraalCompilerDashboard extends JFrame {
             return;
         }
 
-        // Auto-save project settings
         saveProject(currentProjectFile);
 
         String graalHome = graalHomeField.getText().trim();
         String vcvarsPath = vcvarsField.getText().trim();
         
-        // Combine options
-        String ramOption = (String) ramComboBox.getSelectedItem();
-        String extraArgs = additionalArgsField.getText().trim();
-        
         StringBuilder optionsBuilder = new StringBuilder();
-        optionsBuilder.append(ramOption).append(" ").append(extraArgs);
+        optionsBuilder.append(ramComboBox.getSelectedItem()).append(" ").append(additionalArgsField.getText().trim());
         
         String externalRes = externalResourcesField.getText().trim();
         StringBuilder classPathBuilder = new StringBuilder(targetJar);
         if (!externalRes.isEmpty()) {
-            String[] folders = externalRes.split(";");
-            for (String folder : folders) {
-                if (!folder.trim().isEmpty()) {
-                    classPathBuilder.append(";").append(folder.trim());
-                }
+            for (String folder : externalRes.split(";")) {
+                if (!folder.trim().isEmpty()) classPathBuilder.append(";").append(folder.trim());
             }
         }
         String classPath = classPathBuilder.toString();
@@ -538,22 +671,14 @@ public class GraalCompilerDashboard extends JFrame {
         if (!includeRes.isEmpty()) {
             optionsBuilder.append(" -H:IncludeResources=\"").append(includeRes).append("\"");
         } else if (!externalRes.isEmpty()) {
-            // If external resources selected but regex is empty, default to embed all
             optionsBuilder.append(" -H:IncludeResources=\".*\"");
         }
 
-        // Init Packages Parse
-        String buildTimeStr = buildTimeInitField.getText().trim();
-        if (!buildTimeStr.isEmpty()) {
-            buildTimeStr = buildTimeStr.replaceAll("\\s+", "");
-            optionsBuilder.append(" --initialize-at-build-time=").append(buildTimeStr);
-        }
+        String buildTimeStr = buildTimeInitField.getText().trim().replaceAll("\\s+", "");
+        if (!buildTimeStr.isEmpty()) optionsBuilder.append(" --initialize-at-build-time=").append(buildTimeStr);
 
-        String runTimeStr = runTimeInitField.getText().trim();
-        if (!runTimeStr.isEmpty()) {
-            runTimeStr = runTimeStr.replaceAll("\\s+", "");
-            optionsBuilder.append(" --initialize-at-run-time=").append(runTimeStr);
-        }
+        String runTimeStr = runTimeInitField.getText().trim().replaceAll("\\s+", "");
+        if (!runTimeStr.isEmpty()) optionsBuilder.append(" --initialize-at-run-time=").append(runTimeStr);
 
         if (enableHttpsCb.isSelected()) optionsBuilder.append(" --enable-https --enable-http");
         if (staticBuildCb.isSelected()) optionsBuilder.append(" --static");
@@ -563,31 +688,27 @@ public class GraalCompilerDashboard extends JFrame {
         
         String combinedOptions = optionsBuilder.toString().trim();
 
-        // UI state update
         buildButton.setEnabled(false);
-        buildButton.setText("Building...");
         runAgentButton.setEnabled(false);
         consoleArea.setText("");
+        buildProgressBar.setIndeterminate(true);
+        buildProgressBar.setString("Building Native Executable...");
 
         File workingDir = new File(targetJar).getParentFile();
-
         boolean packageStandalone = standalonePackagerCb.isSelected();
         String targetOs = (String) targetOsComboBox.getSelectedItem();
         
         NativeImageExecutor executor = new NativeImageExecutor();
-        
-        // We use the executor which already spawns a background thread.
-        // SwingUtilities.invokeLater is used to safely update the UI from the background thread.
         executor.execute(vcvarsPath, graalHome, combinedOptions, classPath, mainClass, workingDir, packageStandalone, targetOs, new NativeImageExecutor.LogListener() {
             @Override
             public void onLogMessage(String message) {
-                SwingUtilities.invokeLater(() -> consoleArea.append(message + "\n"));
+                appendColoredText(message);
             }
 
             @Override
             public void onProcessComplete(int exitCode) {
                 SwingUtilities.invokeLater(() -> {
-                    consoleArea.append("\nProcess finished with exit code: " + exitCode + "\n");
+                    appendColoredText("\nProcess finished with exit code: " + exitCode);
                     resetButtons();
                 });
             }
@@ -595,7 +716,7 @@ public class GraalCompilerDashboard extends JFrame {
             @Override
             public void onProcessFailed(Exception e) {
                 SwingUtilities.invokeLater(() -> {
-                    consoleArea.append("\nProcess failed to execute: " + e.getMessage() + "\n");
+                    appendColoredText("\nProcess failed to execute: " + e.getMessage());
                     resetButtons();
                 });
             }
@@ -610,52 +731,40 @@ public class GraalCompilerDashboard extends JFrame {
             return;
         }
 
-        // Auto-save project settings
         saveProject(currentProjectFile);
 
         String graalHome = graalHomeField.getText().trim();
         File workingDir = new File(targetJar).getParentFile();
         File configDir = new File(workingDir, "native-image-configs");
-        if (!configDir.exists()) {
-            configDir.mkdirs();
-        }
+        if (!configDir.exists()) configDir.mkdirs();
 
         buildButton.setEnabled(false);
         runAgentButton.setEnabled(false);
-        runAgentButton.setText("Agent Running...");
         consoleArea.setText("");
+        buildProgressBar.setIndeterminate(true);
+        buildProgressBar.setString("Running Tracing Agent...");
 
         String classPath = targetJar;
         String externalRes = externalResourcesField.getText().trim();
-        if (!externalRes.isEmpty()) {
-            classPath += ";" + externalRes;
-        }
+        if (!externalRes.isEmpty()) classPath += ";" + externalRes;
 
         NativeImageExecutor executor = new NativeImageExecutor();
-        String agentArgs = agentArgsField.getText().trim();
-        boolean mergeConfigs = mergeAgentConfigsCb.isSelected();
-        executor.executeAgent(graalHome, agentArgs, classPath, mainClass, workingDir, mergeConfigs, new NativeImageExecutor.LogListener() {
+        executor.executeAgent(graalHome, agentArgsField.getText().trim(), classPath, mainClass, workingDir, mergeAgentConfigsCb.isSelected(), new NativeImageExecutor.LogListener() {
             @Override
             public void onLogMessage(String message) {
-                SwingUtilities.invokeLater(() -> consoleArea.append(message + "\n"));
+                appendColoredText(message);
             }
 
             @Override
             public void onProcessComplete(int exitCode) {
                 SwingUtilities.invokeLater(() -> {
-                    consoleArea.append("\nAgent process finished with exit code: " + exitCode + "\n");
-                    consoleArea.append("Configurations saved to: " + configDir.getAbsolutePath() + "\n");
+                    appendColoredText("\nAgent process finished with exit code: " + exitCode);
+                    appendColoredText("Configurations saved to: " + configDir.getAbsolutePath());
                     
-                    // Auto-append config to Additional Arguments if not present
                     String currentArgs = additionalArgsField.getText().trim();
                     if (!currentArgs.contains("ConfigurationFileDirectories=native-image-configs")) {
-                        if (!currentArgs.isEmpty()) {
-                            currentArgs += " ";
-                        }
-                        currentArgs += "-H:ConfigurationFileDirectories=native-image-configs";
-                        additionalArgsField.setText(currentArgs);
+                        additionalArgsField.setText(currentArgs + (currentArgs.isEmpty() ? "" : " ") + "-H:ConfigurationFileDirectories=native-image-configs");
                     }
-                    
                     resetButtons();
                 });
             }
@@ -663,7 +772,7 @@ public class GraalCompilerDashboard extends JFrame {
             @Override
             public void onProcessFailed(Exception e) {
                 SwingUtilities.invokeLater(() -> {
-                    consoleArea.append("\nAgent process failed to execute: " + e.getMessage() + "\n");
+                    appendColoredText("\nAgent process failed to execute: " + e.getMessage());
                     resetButtons();
                 });
             }
@@ -672,9 +781,10 @@ public class GraalCompilerDashboard extends JFrame {
 
     private void resetButtons() {
         buildButton.setEnabled(true);
-        buildButton.setText("Build Native Image");
         runAgentButton.setEnabled(true);
-        runAgentButton.setText("Run Tracing Agent");
+        buildProgressBar.setIndeterminate(false);
+        buildProgressBar.setValue(100);
+        buildProgressBar.setString("Ready");
     }
 
     public static void main(String[] args) {
