@@ -30,23 +30,41 @@ public class NativeImageExecutor {
      * @param listener     The callback listener for logs and process events
      */
     @SuppressWarnings("squid:S107") // Ignore too many parameters warning to keep code simple
-    public void execute(String vcvarsPath, String javaHome, String options, String classPath, String mainClass, File workingDir, boolean packageStandalone, LogListener listener) {
+    public void execute(String vcvarsPath, String javaHome, String options, String classPath, String mainClass, File workingDir, boolean packageStandalone, String targetOs, LogListener listener) {
         new Thread(() -> {
             try {
-                // Construct the compound cmd command using absolute path to the binary in the portable folder
-                String nativeImageBin = javaHome + "\\bin\\native-image.cmd";
-                String command = String.format(
-                        "call \"%s\" && set \"JAVA_HOME=%s\" && \"%s\" %s -cp \"%s\" %s",
-                        vcvarsPath, javaHome, nativeImageBin, options == null ? "" : options, classPath, mainClass
-                );
+                String command;
+                if ("Linux (ELF via Docker)".equals(targetOs)) {
+                    if (!ensureDockerImageExists(workingDir, listener)) {
+                        listener.onProcessFailed(new IOException("Docker image initialization failed."));
+                        return;
+                    }
 
-                listener.onLogMessage("Starting build process...");
-                listener.onLogMessage("Command: cmd.exe /c " + command);
+                    String linuxCp = translateToLinuxPath(classPath, workingDir);
+                    String dockerOptions = translateToLinuxPath(options == null ? "" : options, workingDir);
+                    
+                    command = String.format(
+                            "docker run --rm -v \"%s:/app\" -w /app ghcr.io/graalvm/native-image:ol8-java11-22.3.3 %s -cp \"%s\" %s",
+                            workingDir.getAbsolutePath(), dockerOptions, linuxCp, mainClass
+                    );
+                    listener.onLogMessage("Starting Docker Build Process for Linux...");
+                } else {
+                    String nativeImageBin = javaHome + "\\bin\\native-image.cmd";
+                    command = String.format(
+                            "call \"%s\" && set \"JAVA_HOME=%s\" && \"%s\" %s -cp \"%s\" %s",
+                            vcvarsPath, javaHome, nativeImageBin, options == null ? "" : options, classPath, mainClass
+                    );
+                    listener.onLogMessage("Starting build process for Windows...");
+                }
+
+                listener.onLogMessage("Command: " + ("Linux (ELF via Docker)".equals(targetOs) ? command : "cmd.exe /c " + command));
 
                 int exitCode = runProcess(command, workingDir, listener);
                 
-                if (exitCode == 0 && packageStandalone) {
+                if (exitCode == 0 && packageStandalone && !"Linux (ELF via Docker)".equals(targetOs)) {
                     packageAsStandalone(javaHome, workingDir, listener);
+                } else if (exitCode == 0 && "Linux (ELF via Docker)".equals(targetOs)) {
+                    listener.onLogMessage("\nLinux build complete! You will find the ELF executable in: " + workingDir.getAbsolutePath());
                 }
                 
                 listener.onProcessComplete(exitCode);
@@ -58,6 +76,67 @@ public class NativeImageExecutor {
                 listener.onProcessFailed(e);
             }
         }, "NativeImage-Execution-Thread").start();
+    }
+
+    private String translateToLinuxPath(String input, File workingDir) {
+        if (input == null || input.isEmpty()) return input;
+        String workDirPath = workingDir.getAbsolutePath();
+        String result = input.replace(workDirPath, "/app");
+        result = result.replace("\\", "/");
+        // Also handle the classpath separator (; to :)
+        if (result.contains(";")) {
+            result = result.replace(";", ":");
+        }
+        return result;
+    }
+
+    private boolean ensureDockerImageExists(File workingDir, LogListener listener) {
+        String imageName = "ghcr.io/graalvm/native-image:ol8-java11-22.3.3";
+        try {
+            Process process = new ProcessBuilder("docker", "images", "-q", imageName).start();
+            java.util.Scanner s = new java.util.Scanner(process.getInputStream()).useDelimiter("\\A");
+            String output = s.hasNext() ? s.next().trim() : "";
+            process.waitFor();
+
+            if (!output.isEmpty()) {
+                return true;
+            }
+
+            listener.onLogMessage("\nOffline Docker Image not found on system. Extracting and installing from embedded resources...");
+            
+            java.io.InputStream is = getClass().getResourceAsStream("/native-image-docker.tar");
+            if (is == null) {
+                listener.onLogMessage("Error: native-image-docker.tar not found in resources!");
+                return false;
+            }
+
+            File tempTar = new File(workingDir, "temp-docker-image.tar");
+            listener.onLogMessage("Extracting ~400MB image to disk. Please wait...");
+            try (java.io.FileOutputStream fos = new java.io.FileOutputStream(tempTar)) {
+                byte[] buffer = new byte[8192];
+                int read;
+                while ((read = is.read(buffer)) != -1) {
+                    fos.write(buffer, 0, read);
+                }
+            }
+
+            listener.onLogMessage("Loading Docker image into daemon. This may take a few minutes...");
+            int loadExit = runProcess("docker load -i \"" + tempTar.getAbsolutePath() + "\"", workingDir, listener);
+            
+            tempTar.delete();
+
+            if (loadExit == 0) {
+                listener.onLogMessage("Offline Docker Image successfully installed!");
+                return true;
+            } else {
+                listener.onLogMessage("Error loading Docker image. Exit code: " + loadExit);
+                return false;
+            }
+
+        } catch (Exception e) {
+            listener.onLogMessage("Error checking/loading Docker image: " + e.getMessage());
+            return false;
+        }
     }
 
     /**

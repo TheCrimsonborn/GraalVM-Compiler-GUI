@@ -26,6 +26,7 @@ public class GraalCompilerDashboard extends JFrame {
     private JTextField agentArgsField;
     private JTextField externalResourcesField;
     private JTextField includeResourcesField;
+    private JComboBox<String> targetOsComboBox;
     private JComboBox<String> ramComboBox;
     private JCheckBox standalonePackagerCb;
     private JCheckBox enableHttpsCb;
@@ -133,6 +134,7 @@ public class GraalCompilerDashboard extends JFrame {
         props.setProperty("exitHandlers", String.valueOf(exitHandlersCb.isSelected()));
         props.setProperty("diagnostics", String.valueOf(diagnosticsCb.isSelected()));
         props.setProperty("mergeConfigs", String.valueOf(mergeAgentConfigsCb.isSelected()));
+        props.setProperty("targetOs", (String) targetOsComboBox.getSelectedItem());
 
         try (FileOutputStream out = new FileOutputStream(file)) {
             props.store(out, "GraalVM Native Image Compiler Project Settings");
@@ -188,6 +190,7 @@ public class GraalCompilerDashboard extends JFrame {
             exitHandlersCb.setSelected(Boolean.parseBoolean(props.getProperty("exitHandlers", "false")));
             diagnosticsCb.setSelected(Boolean.parseBoolean(props.getProperty("diagnostics", "false")));
             mergeAgentConfigsCb.setSelected(Boolean.parseBoolean(props.getProperty("mergeConfigs", "true")));
+            targetOsComboBox.setSelectedItem(props.getProperty("targetOs", "Windows (.exe)"));
             
             if (consoleArea != null) {
                 consoleArea.append("Project loaded from: " + file.getAbsolutePath() + "\n");
@@ -354,6 +357,19 @@ public class GraalCompilerDashboard extends JFrame {
         ramComboBox.setSelectedIndex(2); // Default to 8G
         panel.add(ramComboBox, gbc);
 
+        row++;
+
+        // Target OS
+        gbc.gridx = 0; gbc.gridy = row; gbc.weightx = 0.0;
+        panel.add(new JLabel("Target OS:"), gbc);
+        gbc.gridx = 1; gbc.gridwidth = 2; gbc.weightx = 1.0;
+        String[] osOptions = {"Windows (.exe)", "Linux (ELF via Docker)"};
+        targetOsComboBox = new JComboBox<>(osOptions);
+        targetOsComboBox.setSelectedIndex(0);
+        targetOsComboBox.setToolTipText("Select the target operating system for the Native Image.");
+        panel.add(targetOsComboBox, gbc);
+        gbc.gridwidth = 1;
+
         return panel;
     }
 
@@ -515,12 +531,13 @@ public class GraalCompilerDashboard extends JFrame {
         File workingDir = new File(targetJar).getParentFile();
 
         boolean packageStandalone = standalonePackagerCb.isSelected();
+        String targetOs = (String) targetOsComboBox.getSelectedItem();
         
         NativeImageExecutor executor = new NativeImageExecutor();
         
         // We use the executor which already spawns a background thread.
         // SwingUtilities.invokeLater is used to safely update the UI from the background thread.
-        executor.execute(vcvarsPath, graalHome, combinedOptions, classPath, mainClass, workingDir, packageStandalone, new NativeImageExecutor.LogListener() {
+        executor.execute(vcvarsPath, graalHome, combinedOptions, classPath, mainClass, workingDir, packageStandalone, targetOs, new NativeImageExecutor.LogListener() {
             @Override
             public void onLogMessage(String message) {
                 SwingUtilities.invokeLater(() -> consoleArea.append(message + "\n"));
