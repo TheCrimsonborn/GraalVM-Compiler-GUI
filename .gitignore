@@ -51,3 +51,6 @@ graalvm-ce-java11-*/
 # Test App
 test_app/
 reports/
+
+# Docker Image
+native-image-docker.tar
