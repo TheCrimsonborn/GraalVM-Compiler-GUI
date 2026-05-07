@@ -78,7 +78,7 @@ public class NativeImageExecutor {
         }, "NativeImage-Execution-Thread").start();
     }
 
-    private String translateToLinuxPath(String input, File workingDir) {
+    String translateToLinuxPath(String input, File workingDir) {
         if (input == null || input.isEmpty()) return input;
         String workDirPath = workingDir.getAbsolutePath();
         String result = input.replace(workDirPath, "/app");
